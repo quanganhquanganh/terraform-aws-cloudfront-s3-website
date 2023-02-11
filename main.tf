@@ -1,13 +1,3 @@
-terraform {
-  required_version = ">= 1.2.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 4.0"
-    }
-  }
-}
-
 provider "aws" {
   region = "us-east-1"
   alias  = "aws_cloudfront"
@@ -53,53 +43,21 @@ data "aws_iam_policy_document" "s3_bucket_policy" {
 
 resource "aws_s3_bucket" "s3_bucket" {
   bucket = var.domain_name
+  acl    = "private"
+  versioning {
+    enabled = true
+  }
+  policy = data.aws_iam_policy_document.s3_bucket_policy.json
   tags   = var.tags
 }
-resource "aws_s3_bucket_policy" "s3_bucket_policy" {
-  bucket = aws_s3_bucket.s3_bucket.id
-  policy = data.aws_iam_policy_document.s3_bucket_policy.json
 
-}
-
-resource "aws_s3_bucket_website_configuration" "s3_bucket" {
-  bucket = aws_s3_bucket.s3_bucket.id
-
-  index_document {
-    suffix = "index.html"
-  }
-
-  error_document {
-    key = "error.html"
-  }
-}
-
-resource "aws_s3_bucket_acl" "s3_bucket" {
-  bucket = var.domain_name
-  acl    = "private"
-}
-
-resource "aws_s3_bucket_versioning" "s3_bucket" {
-  bucket = var.domain_name
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_object" "object" {
+resource "aws_s3_bucket_object" "object" {
   count        = var.upload_sample_file ? 1 : 0
   bucket       = aws_s3_bucket.s3_bucket.bucket
   key          = "index.html"
   source       = "${path.module}/index.html"
   content_type = "text/html"
   etag         = filemd5("${path.module}/index.html")
-}
-resource "aws_s3_object" "errorobject" {
-  count        = var.upload_sample_file ? 1 : 0
-  bucket       = aws_s3_bucket.s3_bucket.bucket
-  key          = "error.html"
-  source       = "${path.module}/error.html"
-  content_type = "text/html"
-  etag         = filemd5("${path.module}/error.html")
 }
 
 data "aws_route53_zone" "domain_name" {
@@ -108,14 +66,8 @@ data "aws_route53_zone" "domain_name" {
   private_zone = false
 }
 
-
-
-
-
-### ROUTE53 ###
-
 resource "aws_route53_record" "route53_record" {
-  count      = var.use_default_domain ? 0 : 1
+  count = var.use_default_domain ? 0 : 1
   depends_on = [
     aws_cloudfront_distribution.s3_distribution
   ]
@@ -139,7 +91,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   ]
 
   origin {
-    domain_name = aws_s3_bucket.s3_bucket.bucket_regional_domain_name
+    domain_name = "${var.domain_name}.s3.amazonaws.com"
     origin_id   = "s3-cloudfront"
 
     s3_origin_config {
@@ -175,19 +127,16 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     }
 
     viewer_protocol_policy = "allow-all"
-
-    # https://stackoverflow.com/questions/67845341/cloudfront-s3-etag-possible-for-cloudfront-to-send-updated-s3-object-before-t
-    min_ttl     = var.cloudfront_min_ttl
-    default_ttl = var.cloudfront_default_ttl
-    max_ttl     = var.cloudfront_max_ttl
+    min_ttl                = 0
+    default_ttl            = 86400
+    max_ttl                = 31536000
   }
 
   price_class = var.price_class
 
   restrictions {
     geo_restriction {
-      restriction_type = var.cloudfront_geo_restriction_restriction_type
-      locations = []
+      restriction_type = "none"
     }
   }
   dynamic "viewer_certificate" {
@@ -210,7 +159,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     error_code            = 403
     response_code         = 200
     error_caching_min_ttl = 0
-    response_page_path    = "/index.html"
+    response_page_path    = "/"
   }
 
   wait_for_deployment = false

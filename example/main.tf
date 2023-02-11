@@ -10,11 +10,8 @@ module "cloudfront_s3_website_with_domain" {
   use_default_domain     = false
   upload_sample_file     = true
   tags                   = var.tags
-
-  cloudfront_min_ttl     = 10
-  cloudfront_default_ttl = 1400
-  cloudfront_max_ttl     = 86400
 }
+
 
 module "cloudfront_s3_website_without_domain" {
   source             = "../"
